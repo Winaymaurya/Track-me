@@ -170,29 +170,61 @@ router.get('/leaderboard', async (req, res) => {
 // Get a friend's analytics
 router.get('/friend-analytics', async (req, res) => {
     try {
-        const { userId, friendId } = req.query;
+        const { userId, friendId, month, year, date } = req.query;
 
         // Verify they are actually friends
         const user = await User.findById(userId);
-        if (!user || (!user.friends.includes(friendId) && friendId !== userId)) {
+        if (!user || (!user.friends.includes(friendId) && friendId.toString() !== userId.toString())) {
             return res.status(403).json({ message: 'Not friends with this user' });
         }
 
-        const fid = new mongoose.Types.ObjectId(friendId);
+        const fid = new mongoose.Types.ObjectId(String(friendId));
         const friend = await User.findById(friendId).select('name username totalFocusTime level avatar bio goal joinDate');
 
-        // 1) Topic Breakdown
-        // Get sessions grouped by date for the last 30 days
-        const thirtyDaysAgo = new Date();
-        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        // If 'date' is provided, we only want detail for that specific day
+        if (date) {
+            const sessions = await Activity.find({
+                userId: fid,
+                startTime: {
+                    $gte: new Date(date + 'T00:00:00'),
+                    $lte: new Date(date + 'T23:59:59')
+                }
+            }).sort({ startTime: -1 });
+
+            // Summary for that day
+            const summary = await Activity.aggregate([
+                {
+                    $match: {
+                        userId: fid,
+                        startTime: {
+                            $gte: new Date(date + 'T00:00:00'),
+                            $lte: new Date(date + 'T23:59:59')
+                        }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        totalDuration: { $sum: '$duration' },
+                        sessionCount: { $sum: 1 },
+                        avgFocusScore: { $avg: '$focusScore' }
+                    }
+                }
+            ]);
+
+            return res.json({ sessions, summary: summary[0] || { totalDuration: 0, sessionCount: 0, avgFocusScore: 0 } });
+        }
+
+        // Otherwise return month-wise summary for calendar
+        let dateQuery = { userId: fid };
+        if (month && year) {
+            const start = new Date(year, month - 1, 1);
+            const end = new Date(year, month, 0, 23, 59, 59);
+            dateQuery.startTime = { $gte: start, $lte: end };
+        }
 
         const dailyAnalytics = await Activity.aggregate([
-            {
-                $match: {
-                    userId: fid,
-                    startTime: { $gte: thirtyDaysAgo }
-                }
-            },
+            { $match: dateQuery },
             {
                 $group: {
                     _id: { $dateToString: { format: '%Y-%m-%d', date: '$startTime', timezone: 'Asia/Kolkata' } },
@@ -203,13 +235,9 @@ router.get('/friend-analytics', async (req, res) => {
             { $sort: { _id: -1 } }
         ]);
 
+        const sessionCount = await Activity.countDocuments({ userId: fid });
 
-        // 2) Recent Sessions
-        const recentSessions = await Activity.find({ userId: fid })
-            .sort({ startTime: -1 })
-            .limit(10);
-
-        // 3) Streak Calculation
+        // Calculate Streak
         const allDays = await Activity.aggregate([
             { $match: { userId: fid } },
             {
@@ -221,21 +249,22 @@ router.get('/friend-analytics', async (req, res) => {
         ]);
 
         let streak = 0;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const todayStr = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000)).toISOString().split('T')[0];
 
         for (let i = 0; i < allDays.length; i++) {
-            const checkDate = new Date(today.getTime() + (5.5 * 60 * 60 * 1000));
+            const checkDate = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000));
             checkDate.setDate(checkDate.getDate() - i);
             const dateStr = checkDate.toISOString().split('T')[0];
             if (allDays.some(d => d._id === dateStr)) {
                 streak++;
             } else {
+                // If today is empty, streak might still be active if yesterday was active
+                if (i === 0) continue;
                 break;
             }
         }
 
-        const sessionCount = await Activity.countDocuments({ userId: fid });
+        const recentSessions = await Activity.find({ userId: fid }).sort({ startTime: -1 }).limit(5);
 
         res.json({
             friend,
@@ -244,6 +273,7 @@ router.get('/friend-analytics', async (req, res) => {
             recentSessions,
             streak
         });
+
 
     } catch (err) {
         console.error(err);
