@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 
 const UserSchema = new mongoose.Schema({
+    pushToken: {
+        type: String,
+        default: null,
+    },
     name: {
         type: String,
         required: true,

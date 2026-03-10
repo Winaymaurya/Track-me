@@ -60,4 +60,15 @@ router.put('/', async (req, res) => {
     }
 });
 
+// Update push token
+router.put('/push-token', async (req, res) => {
+    const { userId, pushToken } = req.body;
+    try {
+        await User.findByIdAndUpdate(userId, { pushToken });
+        res.json({ message: 'Push token updated' });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 module.exports = router;

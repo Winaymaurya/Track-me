@@ -182,18 +182,27 @@ router.get('/friend-analytics', async (req, res) => {
         const friend = await User.findById(friendId).select('name username totalFocusTime level avatar bio goal joinDate');
 
         // 1) Topic Breakdown
-        const analytics = await Activity.aggregate([
-            { $match: { userId: fid } },
+        // Get sessions grouped by date for the last 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const dailyAnalytics = await Activity.aggregate([
             {
-                $group: {
-                    _id: '$topic',
-                    totalDuration: { $sum: '$duration' },
-                    count: { $sum: 1 },
-                    type: { $first: '$type' },
+                $match: {
+                    userId: fid,
+                    startTime: { $gte: thirtyDaysAgo }
                 }
             },
-            { $sort: { totalDuration: -1 } }
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$startTime', timezone: 'Asia/Kolkata' } },
+                    totalDuration: { $sum: '$duration' },
+                    count: { $sum: 1 },
+                }
+            },
+            { $sort: { _id: -1 } }
         ]);
+
 
         // 2) Recent Sessions
         const recentSessions = await Activity.find({ userId: fid })
@@ -226,11 +235,11 @@ router.get('/friend-analytics', async (req, res) => {
             }
         }
 
-        const sessionCount = await Activity.countDocuments({ userId: friendId });
+        const sessionCount = await Activity.countDocuments({ userId: fid });
 
         res.json({
             friend,
-            analytics,
+            dailyAnalytics,
             sessionCount,
             recentSessions,
             streak
@@ -238,6 +247,92 @@ router.get('/friend-analytics', async (req, res) => {
 
     } catch (err) {
         console.error(err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Helper for Push Notifications via Expo
+const https = require('https');
+const sendPushNotification = async (token, title, body, data = {}) => {
+    if (!token || !token.startsWith('ExponentPushToken')) return;
+
+    const message = {
+        to: token,
+        title,
+        body,
+        data,
+    };
+
+    const options = {
+        hostname: 'exp.host',
+        path: '/--/api/v2/push/send',
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'Accept-encoding': 'gzip, deflate',
+            'Content-Type': 'application/json',
+        },
+    };
+
+    const req = https.request(options, (res) => {
+        res.on('data', () => { }); // Consume data
+    });
+
+    req.on('error', (e) => {
+        console.error('Push Notification Error:', e);
+    });
+
+    req.write(JSON.stringify(message));
+    req.end();
+};
+
+// Send a friend request (with notification)
+router.post('/friend-request', async (req, res) => {
+    try {
+        const { fromUserId, toUserId } = req.body;
+        const fromUser = await User.findById(fromUserId);
+        const toUser = await User.findById(toUserId);
+
+        if (!fromUser || !toUser) return res.status(404).json({ message: 'User not found' });
+
+        // Add to recipient's requests
+        const alreadyRequested = toUser.friendRequests.some(r => r.from.toString() === fromUserId && r.status === 'pending');
+        if (alreadyRequested) return res.status(400).json({ message: 'Request already pending' });
+
+        toUser.friendRequests.push({ from: fromUserId, status: 'pending' });
+        await toUser.save();
+
+        // Send Push Notification
+        if (toUser.pushToken) {
+            await sendPushNotification(
+                toUser.pushToken,
+                'New Friend Request! 🤝',
+                `${fromUser.name} (@${fromUser.username}) wants to be your study buddy!`,
+                { type: 'friend_request', fromId: fromUserId }
+            );
+        }
+
+        res.json({ message: 'Request sent' });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Unfriend a user
+router.post('/unfriend', async (req, res) => {
+    try {
+        const { userId, friendId } = req.body;
+        const user = await User.findById(userId);
+        const friend = await User.findById(friendId);
+
+        if (!user || !friend) return res.status(404).json({ message: 'User not found' });
+
+        user.friends = user.friends.filter(f => f.toString() !== friendId);
+        friend.friends = friend.friends.filter(f => f.toString() !== userId);
+
+        await Promise.all([user.save(), friend.save()]);
+        res.json({ message: 'Unfriended successfully' });
+    } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
