@@ -37,7 +37,7 @@ router.get('/', async (req, res) => {
 // Update user profile
 router.put('/', async (req, res) => {
     try {
-        const { id, name, bio, goal, avatar, username } = req.body;
+        const { id, name, bio, goal, avatar, username, reminders } = req.body;
         if (!id) return res.status(400).json({ message: 'User ID is required' });
 
         const user = await User.findById(id);
@@ -47,7 +47,9 @@ router.put('/', async (req, res) => {
         if (bio !== undefined) user.bio = bio;
         if (goal) user.goal = goal;
         if (avatar) user.avatar = avatar;
+        if (reminders) user.reminders = reminders;
         if (username) {
+
             // Check if username is taken by another user
             const existing = await User.findOne({ username, _id: { $ne: id } });
             if (existing) return res.status(400).json({ message: 'Username already taken' });

@@ -60,7 +60,20 @@ const UserSchema = new mongoose.Schema({
             date: { type: Date, default: Date.now }
         }
     ],
+    reminders: [
+        {
+            id: { type: String, required: true },
+            title: { type: String, required: true },
+            time: { type: String, required: true }, // Format: "HH:mm"
+            date: { type: String }, // Format: "YYYY-MM-DD" for one-time reminders
+            enabled: { type: Boolean, default: true },
+            repeatDaily: { type: Boolean, default: true }
+        }
+    ],
+
+
     joinDate: {
+
         type: Date,
         default: Date.now,
     }

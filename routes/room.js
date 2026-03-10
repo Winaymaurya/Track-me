@@ -12,7 +12,8 @@ router.get('/search', async (req, res) => {
         const users = await User.find({
             username: { $regex: q, $options: 'i' },
             _id: { $ne: userId } // exclude self
-        }).select('name username _id').limit(10);
+        }).select('name username avatar _id').limit(10);
+
 
         res.json(users);
     } catch (err) {
@@ -58,7 +59,8 @@ router.post('/friend-request', async (req, res) => {
 router.get('/friend-requests', async (req, res) => {
     try {
         const { userId } = req.query;
-        const user = await User.findById(userId).populate('friendRequests.from', 'name username');
+        const user = await User.findById(userId).populate('friendRequests.from', 'name username avatar');
+
         if (!user) return res.status(404).json({ message: 'User not found' });
 
         const pending = user.friendRequests.filter(r => r.status === 'pending');
@@ -110,7 +112,8 @@ router.post('/friend-request/respond', async (req, res) => {
 router.get('/friends', async (req, res) => {
     try {
         const { userId } = req.query;
-        const user = await User.findById(userId).populate('friends', 'name username totalFocusTime level');
+        const user = await User.findById(userId).populate('friends', 'name username totalFocusTime level avatar');
+
         if (!user) return res.status(404).json({ message: 'User not found' });
 
         res.json(user.friends);
@@ -129,16 +132,18 @@ router.get('/leaderboard', async (req, res) => {
             return res.json([]);
         }
 
-        const user = await User.findById(userId).populate('friends', 'name username totalFocusTime level');
+        const user = await User.findById(userId).populate('friends', 'name username totalFocusTime level avatar');
+
         if (!user) return res.json([]);
 
         // Build leaderboard from user + friends
         const participants = [
-            { _id: user._id, name: user.name, totalFocusTime: user.totalFocusTime, level: user.level, isYou: true },
+            { _id: user._id, name: user.name, totalFocusTime: user.totalFocusTime, level: user.level, avatar: user.avatar, isYou: true },
             ...user.friends.map(f => ({
-                _id: f._id, name: f.name, totalFocusTime: f.totalFocusTime, level: f.level, isYou: false
+                _id: f._id, name: f.name, totalFocusTime: f.totalFocusTime, level: f.level, avatar: f.avatar, isYou: false
             }))
         ];
+
 
         // Sort by totalFocusTime descending
         participants.sort((a, b) => b.totalFocusTime - a.totalFocusTime);
@@ -151,8 +156,10 @@ router.get('/leaderboard', async (req, res) => {
             rank: idx + 1,
             level: p.level,
             color: idx === 0 ? 'text-amber-400' : idx === 1 ? 'text-slate-300' : idx === 2 ? 'text-amber-700' : 'text-gray-500',
-            isYou: p.isYou
+            isYou: p.isYou,
+            avatar: p.avatar
         }));
+
 
         res.json(leaderboard);
     } catch (err) {
@@ -171,8 +178,11 @@ router.get('/friend-analytics', async (req, res) => {
             return res.status(403).json({ message: 'Not friends with this user' });
         }
 
-        const friend = await User.findById(friendId).select('name username totalFocusTime level');
+        const friend = await User.findById(friendId).select('name username totalFocusTime level avatar');
+        const sessionCount = await Activity.countDocuments({ userId: friendId });
+
         const analytics = await Activity.aggregate([
+
             { $match: { userId: require('mongoose').Types.ObjectId.createFromHexString(friendId) } },
             {
                 $group: {
@@ -185,7 +195,8 @@ router.get('/friend-analytics', async (req, res) => {
             { $sort: { totalDuration: -1 } }
         ]);
 
-        res.json({ friend, analytics });
+        res.json({ friend, analytics, sessionCount });
+
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
