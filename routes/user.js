@@ -34,4 +34,32 @@ router.get('/', async (req, res) => {
     }
 });
 
+// Update user profile
+router.put('/', async (req, res) => {
+    try {
+        const { id, name, bio, goal, avatar, username } = req.body;
+        if (!id) return res.status(400).json({ message: 'User ID is required' });
+
+        const user = await User.findById(id);
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        if (name) user.name = name;
+        if (bio !== undefined) user.bio = bio;
+        if (goal) user.goal = goal;
+        if (avatar) user.avatar = avatar;
+        if (username) {
+            // Check if username is taken by another user
+            const existing = await User.findOne({ username, _id: { $ne: id } });
+            if (existing) return res.status(400).json({ message: 'Username already taken' });
+            user.username = username;
+        }
+
+        await user.save();
+        res.json(user);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
 module.exports = router;

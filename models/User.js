@@ -26,6 +26,14 @@ const UserSchema = new mongoose.Schema({
         type: String,
         default: 'Academics',
     },
+    bio: {
+        type: String,
+        default: 'Dedicated to focused learning and growth.',
+    },
+    avatar: {
+        type: String,
+        default: 'avatar1', // Default avatar ID
+    },
     totalFocusTime: {
         type: Number, // Total seconds
         default: 0,
