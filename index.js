@@ -23,7 +23,7 @@ app.use("/api/auth", authRoutes);
 
 // Test Route
 app.get("/", (req, res) => {
-    res.send("🚀 StudyFlow API is running...");
+    res.send("🚀 TrackMe API is running...");
 });
 
 // MongoDB URI
@@ -39,7 +39,7 @@ mongoose
 
         // Start server only after DB connects
         app.listen(PORT, () => {
-            console.log(`🚀 Server running on port ${PORT}`);
+            console.log(`🚀 Server running on port ${PORT}. Join TrackMe today!`);
         });
     })
     .catch((err) => {
