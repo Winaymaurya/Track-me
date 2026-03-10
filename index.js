@@ -59,3 +59,19 @@ mongoose.connection.on("error", (err) => {
 mongoose.connection.on("disconnected", () => {
     console.log("🔌 Mongoose disconnected from DB");
 });
+
+/**
+ * Render Free Tier Self-Ping (Heartbeat)
+ * Prevents the application from spinning down after 15 minutes of inactivity.
+ * It pings itself every 14 minutes.
+ */
+const https = require('https');
+const SELF_URL = 'https://track-me-1-frbt.onrender.com';
+
+setInterval(() => {
+    https.get(SELF_URL, (res) => {
+        console.log(`💓 Heartbeat: ${res.statusCode === 200 ? 'SUCCESS' : 'FAILURE'}`);
+    }).on('error', (err) => {
+        console.error('❌ Heartbeat Error:', err.message);
+    });
+}, 14 * 60 * 1000); // 14 minutes in milliseconds
