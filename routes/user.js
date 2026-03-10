@@ -14,19 +14,16 @@ router.get('/', async (req, res) => {
             user = await User.findOne(); // Fallback for debugging
         }
 
-        // If no user exists, let's create a mocked user for demo purposes!
         if (!user) {
-            user = new User({
-                name: 'Vinay',
-                title: 'Level 12 Scholar',
-                totalFocusTime: 45000, // starting focus time
-                achievements: [
-                    { title: "7 Day Focus", completed: true, progress: 7, maxProgress: 7, iconType: "star" },
-                    { title: "100 Hours", completed: false, progress: 82, maxProgress: 100, iconType: "book" }
-                ],
-            });
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Assign random avatar if current is default or missing
+        if (!user.avatar || user.avatar === 'avatar1') {
+            user.avatar = `avatar${Math.floor(Math.random() * 10) + 1}`;
             await user.save();
         }
+
         res.json(user);
     } catch (err) {
         console.log(err);
@@ -49,7 +46,6 @@ router.put('/', async (req, res) => {
         if (avatar) user.avatar = avatar;
         if (reminders) user.reminders = reminders;
         if (username) {
-
             // Check if username is taken by another user
             const existing = await User.findOne({ username, _id: { $ne: id } });
             if (existing) return res.status(400).json({ message: 'Username already taken' });

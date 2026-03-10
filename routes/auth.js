@@ -23,10 +23,13 @@ router.post('/register', async (req, res) => {
             return res.status(400).json({ message: 'User already exists' });
         }
 
+        const randomAvatarId = `avatar${Math.floor(Math.random() * 10) + 1}`;
+
         user = new User({
             name,
             username,
             password,
+            avatar: randomAvatarId,
             goal: goal || 'Academics',
             // default stats
             totalFocusTime: 0,
@@ -47,6 +50,7 @@ router.post('/register', async (req, res) => {
                 name: user.name,
                 username: user.username,
                 level: user.level,
+                avatar: user.avatar,
             }
         });
     } catch (err) {
@@ -86,6 +90,7 @@ router.post('/login', async (req, res) => {
                 name: user.name,
                 username: user.username,
                 level: user.level,
+                avatar: user.avatar,
             }
         });
     } catch (err) {

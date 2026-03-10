@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const Activity = require('../models/Activity');
+const mongoose = require('mongoose');
 
 // Search users by username
 router.get('/search', async (req, res) => {
@@ -128,7 +129,6 @@ router.get('/leaderboard', async (req, res) => {
         const { userId } = req.query;
 
         if (!userId) {
-            // Fallback mock data
             return res.json([]);
         }
 
@@ -174,16 +174,16 @@ router.get('/friend-analytics', async (req, res) => {
 
         // Verify they are actually friends
         const user = await User.findById(userId);
-        if (!user || !user.friends.includes(friendId)) {
+        if (!user || (!user.friends.includes(friendId) && friendId !== userId)) {
             return res.status(403).json({ message: 'Not friends with this user' });
         }
 
-        const friend = await User.findById(friendId).select('name username totalFocusTime level avatar');
-        const sessionCount = await Activity.countDocuments({ userId: friendId });
+        const fid = new mongoose.Types.ObjectId(friendId);
+        const friend = await User.findById(friendId).select('name username totalFocusTime level avatar bio goal joinDate');
 
+        // 1) Topic Breakdown
         const analytics = await Activity.aggregate([
-
-            { $match: { userId: require('mongoose').Types.ObjectId.createFromHexString(friendId) } },
+            { $match: { userId: fid } },
             {
                 $group: {
                     _id: '$topic',
@@ -195,9 +195,49 @@ router.get('/friend-analytics', async (req, res) => {
             { $sort: { totalDuration: -1 } }
         ]);
 
-        res.json({ friend, analytics, sessionCount });
+        // 2) Recent Sessions
+        const recentSessions = await Activity.find({ userId: fid })
+            .sort({ startTime: -1 })
+            .limit(10);
+
+        // 3) Streak Calculation
+        const allDays = await Activity.aggregate([
+            { $match: { userId: fid } },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$startTime', timezone: 'Asia/Kolkata' } },
+                },
+            },
+            { $sort: { _id: -1 } },
+        ]);
+
+        let streak = 0;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        for (let i = 0; i < allDays.length; i++) {
+            const checkDate = new Date(today.getTime() + (5.5 * 60 * 60 * 1000));
+            checkDate.setDate(checkDate.getDate() - i);
+            const dateStr = checkDate.toISOString().split('T')[0];
+            if (allDays.some(d => d._id === dateStr)) {
+                streak++;
+            } else {
+                break;
+            }
+        }
+
+        const sessionCount = await Activity.countDocuments({ userId: friendId });
+
+        res.json({
+            friend,
+            analytics,
+            sessionCount,
+            recentSessions,
+            streak
+        });
 
     } catch (err) {
+        console.error(err);
         res.status(500).json({ message: err.message });
     }
 });
