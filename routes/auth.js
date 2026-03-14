@@ -33,9 +33,14 @@ router.post('/register', async (req, res) => {
             goal: goal || 'Academics',
             // default stats
             totalFocusTime: 0,
+            totalSessions: 0,
+            totalFlowSessions: 0,
             achievements: [
-                { title: "7 Day Focus", completed: false, progress: 0, maxProgress: 7, iconType: "star" },
-                { title: "100 Hours", completed: false, progress: 0, maxProgress: 100, iconType: "book" }
+                { title: "First Step", completed: false, progress: 0, maxProgress: 1, iconType: "footsteps" },
+                { title: "Focus Novice", completed: false, progress: 0, maxProgress: 5, iconType: "timer" }, // 5 hours
+                { title: "Flow Finder", completed: false, progress: 0, maxProgress: 5, iconType: "water" }, // 5 flow states
+                { title: "Persistence", completed: false, progress: 0, maxProgress: 10, iconType: "trophy" }, // 10 sessions
+                { title: "Focus Master", completed: false, progress: 0, maxProgress: 50, iconType: "medal" }, // 50 hours
             ],
         });
 

@@ -42,6 +42,14 @@ const UserSchema = new mongoose.Schema({
         type: Number, // Total seconds
         default: 0,
     },
+    totalSessions: {
+        type: Number,
+        default: 0,
+    },
+    totalFlowSessions: {
+        type: Number,
+        default: 0,
+    },
     achievements: [
         {
             title: String,
@@ -80,7 +88,17 @@ const UserSchema = new mongoose.Schema({
 
         type: Date,
         default: Date.now,
-    }
+    },
+    isFocusing: {
+        type: Boolean,
+        default: false,
+    },
+    lastNudges: [
+        {
+            from: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            date: { type: Date, default: Date.now }
+        }
+    ]
 });
 
 // Hash password before saving

@@ -75,8 +75,47 @@ router.post('/', async (req, res) => {
         // Update user stats
         const user = await User.findById(userId);
         if (user) {
+            // Update core stats
             user.totalFocusTime += duration;
+            user.totalSessions = (user.totalSessions || 0) + 1;
+            if (flowStateAchieved) {
+                user.totalFlowSessions = (user.totalFlowSessions || 0) + 1;
+            }
+            
             user.level = Math.floor(user.totalFocusTime / 3600) + 1;
+            user.isFocusing = false;
+
+            // Define achievement map for easy updating
+            const achievementSync = [
+                { title: "First Step", progress: user.totalSessions },
+                { title: "Focus Novice", progress: Math.floor(user.totalFocusTime / 3600) },
+                { title: "Flow Finder", progress: user.totalFlowSessions },
+                { title: "Persistence", progress: user.totalSessions },
+                { title: "Focus Master", progress: Math.floor(user.totalFocusTime / 3600) }
+            ];
+
+            // Initialize achievements if missing (for older users)
+            if (!user.achievements || user.achievements.length === 0 || user.achievements.length < 5) {
+                user.achievements = [
+                    { title: "First Step", completed: false, progress: 0, maxProgress: 1, iconType: "footsteps" },
+                    { title: "Focus Novice", completed: false, progress: 0, maxProgress: 5, iconType: "timer" },
+                    { title: "Flow Finder", completed: false, progress: 0, maxProgress: 5, iconType: "water" },
+                    { title: "Persistence", completed: false, progress: 0, maxProgress: 10, iconType: "trophy" },
+                    { title: "Focus Master", completed: false, progress: 0, maxProgress: 50, iconType: "medal" }
+                ];
+            }
+
+            // Update each achievement's progress and completion status
+            achievementSync.forEach(sync => {
+                const ach = user.achievements.find(a => a.title === sync.title);
+                if (ach && !ach.completed) {
+                    ach.progress = Math.min(sync.progress, ach.maxProgress);
+                    if (ach.progress >= ach.maxProgress) {
+                        ach.completed = true;
+                    }
+                }
+            });
+
             await user.save();
         }
 

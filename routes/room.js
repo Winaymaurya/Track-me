@@ -10,19 +10,40 @@ router.get('/search', async (req, res) => {
         const { q, userId } = req.query;
         if (!q) return res.json([]);
 
+        const currentUser = await User.findById(userId);
+        if (!currentUser) return res.status(404).json({ message: 'User not found' });
+
         const users = await User.find({
             username: { $regex: q, $options: 'i' },
             _id: { $ne: userId } // exclude self
-        }).select('name username avatar _id').limit(10);
+        }).select('name username avatar _id friends friendRequests').limit(10);
 
+        const results = users.map(u => {
+            let status = 'none';
+            if (currentUser.friends.includes(u._id)) {
+                status = 'friend';
+            } else if (u.friendRequests.some(r => r.from.toString() === userId && r.status === 'pending')) {
+                status = 'pending';
+            } else if (currentUser.friendRequests.some(r => r.from.toString() === u._id.toString() && r.status === 'pending')) {
+                status = 'received';
+            }
 
-        res.json(users);
+            return {
+                _id: u._id,
+                name: u.name,
+                username: u.username,
+                avatar: u.avatar,
+                status: status
+            };
+        });
+
+        res.json(results);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 });
 
-// Send friend request
+// Send a friend request (with notification)
 router.post('/friend-request', async (req, res) => {
     try {
         const { fromUserId, toUserId } = req.body;
@@ -31,26 +52,34 @@ router.post('/friend-request', async (req, res) => {
             return res.status(400).json({ message: "You can't add yourself" });
         }
 
+        const fromUser = await User.findById(fromUserId);
         const toUser = await User.findById(toUserId);
-        if (!toUser) return res.status(404).json({ message: 'User not found' });
+
+        if (!fromUser || !toUser) return res.status(404).json({ message: 'User not found' });
 
         // Check if already friends
         if (toUser.friends.includes(fromUserId)) {
             return res.status(400).json({ message: 'Already friends' });
         }
 
-        // Check if request already sent
-        const existing = toUser.friendRequests.find(
-            r => r.from.toString() === fromUserId && r.status === 'pending'
-        );
-        if (existing) {
-            return res.status(400).json({ message: 'Request already sent' });
-        }
+        // Add to recipient's requests
+        const alreadyRequested = toUser.friendRequests.some(r => r.from.toString() === fromUserId && r.status === 'pending');
+        if (alreadyRequested) return res.status(400).json({ message: 'Request already pending' });
 
         toUser.friendRequests.push({ from: fromUserId, status: 'pending' });
         await toUser.save();
 
-        res.json({ message: 'Friend request sent!' });
+        // Send Push Notification
+        if (toUser.pushToken) {
+            await sendPushNotification(
+                toUser.pushToken,
+                'New Friend Request! 🤝',
+                `${fromUser.name} (@${fromUser.username}) wants to be your study buddy!`,
+                { type: 'friend_request', fromId: fromUserId }
+            );
+        }
+
+        res.json({ message: 'Request sent' });
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
@@ -113,7 +142,7 @@ router.post('/friend-request/respond', async (req, res) => {
 router.get('/friends', async (req, res) => {
     try {
         const { userId } = req.query;
-        const user = await User.findById(userId).populate('friends', 'name username totalFocusTime level avatar');
+        const user = await User.findById(userId).populate('friends', 'name username totalFocusTime level avatar isFocusing');
 
         if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -122,6 +151,57 @@ router.get('/friends', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
+
+// Update live focus status
+router.post('/status', async (req, res) => {
+    try {
+        const { userId, isFocusing } = req.body;
+        if (!userId) return res.status(400).json({ message: 'UserId is required' });
+        
+        await User.findByIdAndUpdate(userId, { isFocusing });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Helper: Calculate Streak for a User ID
+const calculateUserStreak = async (userId) => {
+    try {
+        const allDays = await Activity.aggregate([
+            { $match: { userId: new mongoose.Types.ObjectId(String(userId)) } },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$startTime', timezone: 'Asia/Kolkata' } },
+                },
+            },
+            { $sort: { _id: -1 } },
+        ]);
+
+        let streak = 0;
+        // Current IST date string
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        const todayStr = new Date(Date.now() + istOffset).toISOString().split('T')[0];
+
+        // This is a simple linear scan, could be optimized but works for now
+        for (let i = 0; i < allDays.length + 1; i++) {
+            const checkDate = new Date(Date.now() + istOffset);
+            checkDate.setDate(checkDate.getDate() - i);
+            const dateStr = checkDate.toISOString().split('T')[0];
+            
+            if (allDays.some(d => d._id === dateStr)) {
+                streak++;
+            } else {
+                // If today is empty, skip and check yesterday
+                if (i === 0) continue; 
+                break;
+            }
+        }
+        return streak;
+    } catch (e) {
+        return 0;
+    }
+};
 
 // Real leaderboard based on friends
 router.get('/leaderboard', async (req, res) => {
@@ -132,15 +212,15 @@ router.get('/leaderboard', async (req, res) => {
             return res.json([]);
         }
 
-        const user = await User.findById(userId).populate('friends', 'name username totalFocusTime level avatar');
+        const user = await User.findById(userId).populate('friends', 'name username totalFocusTime level avatar isFocusing');
 
         if (!user) return res.json([]);
 
         // Build leaderboard from user + friends
         const participants = [
-            { _id: user._id, name: user.name, totalFocusTime: user.totalFocusTime, level: user.level, avatar: user.avatar, isYou: true },
+            { _id: user._id, name: user.name, totalFocusTime: user.totalFocusTime, level: user.level, avatar: user.avatar, isYou: true, isFocusing: user.isFocusing },
             ...user.friends.map(f => ({
-                _id: f._id, name: f.name, totalFocusTime: f.totalFocusTime, level: f.level, avatar: f.avatar, isYou: false
+                _id: f._id, name: f.name, totalFocusTime: f.totalFocusTime, level: f.level, avatar: f.avatar, isYou: false, isFocusing: f.isFocusing
             }))
         ];
 
@@ -148,16 +228,22 @@ router.get('/leaderboard', async (req, res) => {
         // Sort by totalFocusTime descending
         participants.sort((a, b) => b.totalFocusTime - a.totalFocusTime);
 
-        // Add rank and format hours
-        const leaderboard = participants.map((p, idx) => ({
-            _id: p._id,
-            name: p.isYou ? `${p.name} (You)` : p.name,
-            hours: `${(p.totalFocusTime / 3600).toFixed(1)}h`,
-            rank: idx + 1,
-            level: p.level,
-            color: idx === 0 ? 'text-amber-400' : idx === 1 ? 'text-slate-300' : idx === 2 ? 'text-amber-700' : 'text-gray-500',
-            isYou: p.isYou,
-            avatar: p.avatar
+        // Add rank, format hours AND FETCH STREAK
+        const leaderboard = await Promise.all(participants.map(async (p, idx) => {
+            const streak = await calculateUserStreak(p._id);
+            return {
+                _id: p._id,
+                name: p.isYou ? `${p.name} (You)` : p.name,
+                hours: `${(p.totalDuration || p.totalFocusTime / 3600).toFixed(1)}h`,
+                totalFocusTime: p.totalFocusTime,
+                rank: idx + 1,
+                level: p.level,
+                color: idx === 0 ? 'text-amber-400' : idx === 1 ? 'text-slate-300' : idx === 2 ? 'text-amber-700' : 'text-gray-500',
+                isYou: p.isYou,
+                avatar: p.avatar,
+                streak: streak,
+                isFocusing: p.isFocusing
+            };
         }));
 
 
@@ -179,7 +265,7 @@ router.get('/friend-analytics', async (req, res) => {
         }
 
         const fid = new mongoose.Types.ObjectId(String(friendId));
-        const friend = await User.findById(friendId).select('name username totalFocusTime level avatar bio goal joinDate');
+        const friend = await User.findById(friendId).select('name username totalFocusTime level avatar bio goal joinDate isFocusing');
 
         // If 'date' is provided, we only want detail for that specific day
         if (date) {
@@ -237,32 +323,7 @@ router.get('/friend-analytics', async (req, res) => {
 
         const sessionCount = await Activity.countDocuments({ userId: fid });
 
-        // Calculate Streak
-        const allDays = await Activity.aggregate([
-            { $match: { userId: fid } },
-            {
-                $group: {
-                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$startTime', timezone: 'Asia/Kolkata' } },
-                },
-            },
-            { $sort: { _id: -1 } },
-        ]);
-
-        let streak = 0;
-        const todayStr = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000)).toISOString().split('T')[0];
-
-        for (let i = 0; i < allDays.length; i++) {
-            const checkDate = new Date(new Date().getTime() + (5.5 * 60 * 60 * 1000));
-            checkDate.setDate(checkDate.getDate() - i);
-            const dateStr = checkDate.toISOString().split('T')[0];
-            if (allDays.some(d => d._id === dateStr)) {
-                streak++;
-            } else {
-                // If today is empty, streak might still be active if yesterday was active
-                if (i === 0) continue;
-                break;
-            }
-        }
+        const streak = await calculateUserStreak(friendId);
 
         const recentSessions = await Activity.find({ userId: fid }).sort({ startTime: -1 }).limit(5);
 
@@ -316,8 +377,8 @@ const sendPushNotification = async (token, title, body, data = {}) => {
     req.end();
 };
 
-// Send a friend request (with notification)
-router.post('/friend-request', async (req, res) => {
+// Poke/Nudge a friend
+router.post('/nudge', async (req, res) => {
     try {
         const { fromUserId, toUserId } = req.body;
         const fromUser = await User.findById(fromUserId);
@@ -325,24 +386,45 @@ router.post('/friend-request', async (req, res) => {
 
         if (!fromUser || !toUser) return res.status(404).json({ message: 'User not found' });
 
-        // Add to recipient's requests
-        const alreadyRequested = toUser.friendRequests.some(r => r.from.toString() === fromUserId && r.status === 'pending');
-        if (alreadyRequested) return res.status(400).json({ message: 'Request already pending' });
+        // Verify they are friends
+        if (!toUser.friends.includes(fromUserId)) {
+            return res.status(403).json({ message: 'Only friends can nudge each other' });
+        }
 
-        toUser.friendRequests.push({ from: fromUserId, status: 'pending' });
-        await toUser.save();
+        // Rate limiting: 1 nudge per hour per friend
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const recentNudge = (toUser.lastNudges || []).find(
+            n => n.from.toString() === fromUserId && n.date > oneHourAgo
+        );
+
+        if (recentNudge) {
+            const minutesLeft = Math.ceil((new Date(recentNudge.date).getTime() + 60 * 60 * 1000 - Date.now()) / (60 * 1000));
+            return res.status(429).json({ message: `Please wait ${minutesLeft} minutes before nudging again.` });
+        }
 
         // Send Push Notification
         if (toUser.pushToken) {
             await sendPushNotification(
                 toUser.pushToken,
-                'New Friend Request! 🤝',
-                `${fromUser.name} (@${fromUser.username}) wants to be your study buddy!`,
-                { type: 'friend_request', fromId: fromUserId }
+                'Focus Ping! 🎯',
+                `${fromUser.name} is calling you to focus! 💪`,
+                {
+                    type: 'nudge',
+                    fromId: fromUserId,
+                    fromAvatar: fromUser.avatar,
+                    fromName: fromUser.name
+                }
             );
-        }
 
-        res.json({ message: 'Request sent' });
+            // Update nudge history (with cleanup)
+            toUser.lastNudges = (toUser.lastNudges || []).filter(n => n.date > oneHourAgo);
+            toUser.lastNudges.push({ from: fromUserId, date: new Date() });
+            await toUser.save();
+
+            res.json({ message: 'Ping sent!' });
+        } else {
+            res.status(400).json({ message: 'User has notifications disabled' });
+        }
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
