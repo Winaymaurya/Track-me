@@ -85,7 +85,6 @@ const UserSchema = new mongoose.Schema({
 
 
     joinDate: {
-
         type: Date,
         default: Date.now,
     },
@@ -98,11 +97,41 @@ const UserSchema = new mongoose.Schema({
             from: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
             date: { type: Date, default: Date.now }
         }
-    ]
+    ],
+    referralCode: {
+        type: String,
+        unique: true,
+        sparse: true,
+    },
+    referredBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null,
+    },
+    referrals: [
+        {
+            user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            date: { type: Date, default: Date.now }
+        }
+    ],
 });
 
-// Hash password before saving
+// Hash password before saving & Generate Referral Code
 UserSchema.pre('save', async function () {
+    // 1. Generate referral code if not present
+    if (!this.referralCode) {
+        const generateCode = () => {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let code = 'TM-';
+            for (let i = 0; i < 4; i++) {
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return code;
+        };
+        this.referralCode = generateCode();
+    }
+
+    // 2. Hash password
     if (!this.isModified('password')) {
         return;
     }

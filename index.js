@@ -16,12 +16,14 @@ const userRoutes = require("./routes/user");
 const roomRoutes = require("./routes/room");
 const authRoutes = require("./routes/auth");
 const configRoutes = require("./routes/config");
+const routineRoutes = require("./routes/routine");
 
 app.use("/api/activity", activityRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/room", roomRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/config", configRoutes);
+app.use("/api/routine", routineRoutes);
 
 // Test Route
 app.get("/", (req, res) => {

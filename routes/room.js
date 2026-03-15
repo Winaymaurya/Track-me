@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require('../models/User');
 const Activity = require('../models/Activity');
 const mongoose = require('mongoose');
+const sendPushNotification = require('../utils/notifier');
 
 // Search users by username
 router.get('/search', async (req, res) => {
@@ -341,41 +342,6 @@ router.get('/friend-analytics', async (req, res) => {
         res.status(500).json({ message: err.message });
     }
 });
-
-// Helper for Push Notifications via Expo
-const https = require('https');
-const sendPushNotification = async (token, title, body, data = {}) => {
-    if (!token || !token.startsWith('ExponentPushToken')) return;
-
-    const message = {
-        to: token,
-        title,
-        body,
-        data,
-    };
-
-    const options = {
-        hostname: 'exp.host',
-        path: '/--/api/v2/push/send',
-        method: 'POST',
-        headers: {
-            'Accept': 'application/json',
-            'Accept-encoding': 'gzip, deflate',
-            'Content-Type': 'application/json',
-        },
-    };
-
-    const req = https.request(options, (res) => {
-        res.on('data', () => { }); // Consume data
-    });
-
-    req.on('error', (e) => {
-        console.error('Push Notification Error:', e);
-    });
-
-    req.write(JSON.stringify(message));
-    req.end();
-};
 
 // Poke/Nudge a friend
 router.post('/nudge', async (req, res) => {

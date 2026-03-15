@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const sendPushNotification = require('../utils/notifier');
 
 // Change this to use environment variable in production
 const JWT_SECRET = process.env.JWT_SECRET || 'this_is_a_very_secret_key_for_studyflow';
@@ -11,7 +12,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'this_is_a_very_secret_key_for_stud
 // @desc    Register user
 router.post('/register', async (req, res) => {
     try {
-        const { name, username, password, goal } = req.body;
+        const { name, username, password, goal, referralCode } = req.body;
 
         if (!name || !username || !password) {
             return res.status(400).json({ message: 'Please enter all fields' });
@@ -37,12 +38,36 @@ router.post('/register', async (req, res) => {
             totalFlowSessions: 0,
             achievements: [
                 { title: "First Step", completed: false, progress: 0, maxProgress: 1, iconType: "footsteps" },
-                { title: "Focus Novice", completed: false, progress: 0, maxProgress: 5, iconType: "timer" }, // 5 hours
-                { title: "Flow Finder", completed: false, progress: 0, maxProgress: 5, iconType: "water" }, // 5 flow states
-                { title: "Persistence", completed: false, progress: 0, maxProgress: 10, iconType: "trophy" }, // 10 sessions
-                { title: "Focus Master", completed: false, progress: 0, maxProgress: 50, iconType: "medal" }, // 50 hours
+                { title: "Focus Novice", completed: false, progress: 0, maxProgress: 5, iconType: "timer" },
+                { title: "Flow Finder", completed: false, progress: 0, maxProgress: 5, iconType: "water" },
+                { title: "Persistence", completed: false, progress: 0, maxProgress: 10, iconType: "trophy" },
+                { title: "Focus Master", completed: false, progress: 0, maxProgress: 50, iconType: "medal" },
+                { title: "Elite Runner", completed: false, progress: 0, maxProgress: 100, iconType: "speedometer" },
+                { title: "Flow Master", completed: false, progress: 0, maxProgress: 50, iconType: "flash" },
+                { title: "Focus Legend", completed: false, progress: 0, maxProgress: 500, iconType: "ribbon" },
+                { title: "Marathoner", completed: false, progress: 0, maxProgress: 300, iconType: "fitness" }
             ],
         });
+
+        // 1. Referral Logic
+        if (referralCode) {
+            const referrer = await User.findOne({ referralCode: referralCode.toUpperCase().trim() });
+            if (referrer) {
+                user.referredBy = referrer._id;
+                referrer.referrals.push({ user: user._id, date: Date.now() });
+                await referrer.save();
+
+                // Send push notification to referrer
+                if (referrer.pushToken) {
+                    await sendPushNotification(
+                        referrer.pushToken,
+                        'New Referral Unlocked! 🎁',
+                        `${name} joined TrackMe using your code! "The Recruiter" Avatar unlocked 🦸‍♂️`,
+                        { type: 'referral', user: user._id }
+                    );
+                }
+            }
+        }
 
         await user.save();
 

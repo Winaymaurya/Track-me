@@ -85,27 +85,48 @@ router.post('/', async (req, res) => {
             user.level = Math.floor(user.totalFocusTime / 3600) + 1;
             user.isFocusing = false;
 
-            // Define achievement map for easy updating
+            // Define achievement map with updated metrics
             const achievementSync = [
                 { title: "First Step", progress: user.totalSessions },
                 { title: "Focus Novice", progress: Math.floor(user.totalFocusTime / 3600) },
                 { title: "Flow Finder", progress: user.totalFlowSessions },
                 { title: "Persistence", progress: user.totalSessions },
-                { title: "Focus Master", progress: Math.floor(user.totalFocusTime / 3600) }
+                { title: "Focus Master", progress: Math.floor(user.totalFocusTime / 3600) },
+                { title: "Elite Runner", progress: user.totalSessions },
+                { title: "Flow Master", progress: user.totalFlowSessions },
+                { title: "Focus Legend", progress: Math.floor(user.totalFocusTime / 3600) },
+                { title: "Marathoner", progress: user.totalSessions }
             ];
 
-            // Initialize achievements if missing (for older users)
-            if (!user.achievements || user.achievements.length === 0 || user.achievements.length < 5) {
-                user.achievements = [
-                    { title: "First Step", completed: false, progress: 0, maxProgress: 1, iconType: "footsteps" },
-                    { title: "Focus Novice", completed: false, progress: 0, maxProgress: 5, iconType: "timer" },
-                    { title: "Flow Finder", completed: false, progress: 0, maxProgress: 5, iconType: "water" },
-                    { title: "Persistence", completed: false, progress: 0, maxProgress: 10, iconType: "trophy" },
-                    { title: "Focus Master", completed: false, progress: 0, maxProgress: 50, iconType: "medal" }
-                ];
-            }
+            const defaultAchievements = [
+                { title: "First Step", maxProgress: 1, iconType: "footsteps" },
+                { title: "Focus Novice", maxProgress: 5, iconType: "timer" },
+                { title: "Flow Finder", maxProgress: 5, iconType: "water" },
+                { title: "Persistence", maxProgress: 10, iconType: "trophy" },
+                { title: "Focus Master", maxProgress: 50, iconType: "medal" },
+                { title: "Elite Runner", maxProgress: 100, iconType: "speedometer" },
+                { title: "Flow Master", maxProgress: 50, iconType: "flash" },
+                { title: "Focus Legend", maxProgress: 500, iconType: "ribbon" },
+                { title: "Marathoner", maxProgress: 300, iconType: "fitness" }
+            ];
 
-            // Update each achievement's progress and completion status
+            if (!user.achievements) user.achievements = [];
+
+            // Add missing achievements safely
+            defaultAchievements.forEach(def => {
+                const found = user.achievements.find(a => a.title === def.title);
+                if (!found) {
+                    user.achievements.push({
+                        title: def.title,
+                        completed: false,
+                        progress: 0,
+                        maxProgress: def.maxProgress,
+                        iconType: def.iconType
+                    });
+                }
+            });
+
+            // Update progress and completion status
             achievementSync.forEach(sync => {
                 const ach = user.achievements.find(a => a.title === sync.title);
                 if (ach && !ach.completed) {
@@ -242,16 +263,17 @@ router.get('/analytics', async (req, res) => {
         ]);
 
         let streak = 0;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+        const istOffset = 5.5 * 60 * 60 * 1000;
 
-        for (let i = 0; i < allDays.length; i++) {
-            const checkDate = new Date(today.getTime() + (5.5 * 60 * 60 * 1000)); // offset to IST
+        for (let i = 0; i < allDays.length + 1; i++) {
+            const checkDate = new Date(Date.now() + istOffset);
             checkDate.setDate(checkDate.getDate() - i);
             const dateStr = checkDate.toISOString().split('T')[0];
+            
             if (allDays.some(d => d._id === dateStr)) {
                 streak++;
             } else {
+                if (i === 0) continue; 
                 break;
             }
         }
