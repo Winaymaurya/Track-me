@@ -76,6 +76,16 @@ router.get('/', async (req, res) => {
             needsSave = true;
         }
 
+        // Initialize new avatar unlock fields for existing users
+        if (!user.unlockedAvatars || user.unlockedAvatars.length === 0) {
+            user.unlockedAvatars = ['avatar1', 'avatar2', 'avatar3', 'avatar10', 'avatar11', 'avatar12'];
+            needsSave = true;
+        }
+        if (user.avatarUnlocksToday === undefined) {
+            user.avatarUnlocksToday = 0;
+            needsSave = true;
+        }
+
         if (needsSave) {
             await user.save();
         }

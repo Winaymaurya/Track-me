@@ -127,6 +127,18 @@ const UserSchema = new mongoose.Schema({
         type: Date,
         default: null,
     },
+    unlockedAvatars: {
+        type: [String],
+        default: ['avatar1', 'avatar2', 'avatar3', 'avatar10', 'avatar11', 'avatar12'], // Initial unlocked avatars
+    },
+    avatarUnlocksToday: {
+        type: Number,
+        default: 0,
+    },
+    lastAvatarUnlockDate: {
+        type: String, // Format: YYYY-MM-DD
+        default: null,
+    },
 });
 
 // Hash password before saving & Generate Referral Code
