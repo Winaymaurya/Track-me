@@ -90,7 +90,7 @@ router.get('/', async (req, res) => {
 // Update user profile
 router.put('/', async (req, res) => {
     try {
-        const { id, name, bio, goal, avatar, username, reminders } = req.body;
+        const { id, name, bio, goal, avatar, username, email, reminders } = req.body;
         if (!id) return res.status(400).json({ message: 'User ID is required' });
 
         const user = await User.findById(id);
@@ -106,6 +106,12 @@ router.put('/', async (req, res) => {
             const existing = await User.findOne({ username, _id: { $ne: id } });
             if (existing) return res.status(400).json({ message: 'Username already taken' });
             user.username = username;
+        }
+
+        if (email) {
+            const existingEmail = await User.findOne({ email: email.toLowerCase(), _id: { $ne: id } });
+            if (existingEmail) return res.status(400).json({ message: 'Email already in use' });
+            user.email = email.toLowerCase();
         }
 
         await user.save();

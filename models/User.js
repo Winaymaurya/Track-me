@@ -114,6 +114,19 @@ const UserSchema = new mongoose.Schema({
             date: { type: Date, default: Date.now }
         }
     ],
+    email: {
+        type: String,
+        unique: true,
+        sparse: true,
+    },
+    resetPasswordOTP: {
+        type: String,
+        default: null,
+    },
+    resetPasswordExpires: {
+        type: Date,
+        default: null,
+    },
 });
 
 // Hash password before saving & Generate Referral Code

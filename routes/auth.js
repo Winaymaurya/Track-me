@@ -12,14 +12,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'this_is_a_very_secret_key_for_stud
 // @desc    Register user
 router.post('/register', async (req, res) => {
     try {
-        const { name, username, password, goal, referralCode } = req.body;
+        const { name, username, email, password, goal, referralCode } = req.body;
 
-        if (!name || !username || !password) {
+        if (!name || !username || !password || !email) {
             return res.status(400).json({ message: 'Please enter all fields' });
         }
 
         // Check for existing user
-        let user = await User.findOne({ username });
+        let user = await User.findOne({ $or: [{ username }, { email: email.toLowerCase() }] });
         if (user) {
             return res.status(400).json({ message: 'User already exists' });
         }
@@ -129,4 +129,103 @@ router.post('/login', async (req, res) => {
     }
 });
 
+const nodemailer = require('nodemailer');
+
+// ──────────────────────────────────────────────
+// POST /forgot-password — Send OTP to email
+// ──────────────────────────────────────────────
+router.post('/forgot-password', async (req, res) => {
+    try {
+        const { identity } = req.body;
+        if (!identity) return res.status(400).json({ message: 'Email or Username is required' });
+
+        const user = await User.findOne({
+            $or: [
+                { email: identity.toLowerCase() },
+                { username: identity }
+            ]
+        });
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        if (!user.email) {
+            return res.status(400).json({ message: 'No email associated with this account. Cannot reset password.' });
+        }
+
+        // 1. Generate 6 digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        user.resetPasswordOTP = otp;
+        user.resetPasswordExpires = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+        await user.save();
+
+        // 2. Setup Nodemailer
+        // SETUP SMTP CREDENTIALS IN YOUR .ENV!
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER || 'your_email@gmail.com', 
+                pass: process.env.EMAIL_PASS || 'your_app_password', 
+            }
+        });
+
+        const mailOptions = {
+            from: process.env.EMAIL_USER || 'your_email@gmail.com',
+            to: user.email,
+            subject: 'TrackMe - Password Reset Code',
+            html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+                    <h2 style="color: #6366f1;">Reset Your Password</h2>
+                    <p>You requested to reset your password for the TrackMe app.</p>
+                    <div style="background: #f3f4f6; padding: 15px; border-radius: 10px; text-align: center; margin: 20px 0;">
+                        <span style="font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #1e1b4b;">${otp}</span>
+                    </div>
+                    <p>This code is valid for 10 minutes. If you did not make this request, you can safely ignore this email.</p>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+        res.json({ success: true, message: 'OTP sent to your email address' });
+
+    } catch (err) {
+        console.error('Forgot password error:', err);
+        res.status(500).json({ message: 'Failed to send reset email. Setup your EMAIL_USER and EMAIL_PASS in .env' });
+    }
+});
+
+// ──────────────────────────────────────────────
+// POST /reset-password — Verify OTP & Set Password
+// ──────────────────────────────────────────────
+router.post('/reset-password', async (req, res) => {
+    try {
+        const { email, otp, newPassword } = req.body;
+
+        if (!email || !otp || !newPassword) {
+            return res.status(400).json({ message: 'Please provide email, OTP, and new password' });
+        }
+
+        const user = await User.findOne({ 
+            email: email.toLowerCase(),
+            resetPasswordOTP: otp,
+            resetPasswordExpires: { $gt: Date.now() } 
+        });
+
+        if (!user) {
+            return res.status(400).json({ message: 'Invalid or expired OTP code' });
+        }
+
+        user.password = newPassword;
+        user.resetPasswordOTP = null;
+        user.resetPasswordExpires = null;
+        await user.save();
+
+        res.json({ success: true, message: 'Password has been reset successfully' });
+
+    } catch (err) {
+        console.error('Reset password error:', err);
+        res.status(500).json({ message: err.message });
+    }
+});
+
 module.exports = router;
+

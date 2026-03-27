@@ -389,4 +389,82 @@ router.get('/analytics/day', async (req, res) => {
     }
 });
 
+
+// ──────────────────────────────────────────────
+// POST /restore-streak — Restore streak with a dummy activity
+// ──────────────────────────────────────────────
+router.post('/restore-streak', async (req, res) => {
+    try {
+        const { userId } = req.body;
+        if (!userId) return res.status(400).json({ message: 'userId is required' });
+
+        const uid = new mongoose.Types.ObjectId(userId);
+
+        // 1) Find all days with activity
+        const allDays = await Activity.aggregate([
+            { $match: { userId: uid } },
+            {
+                $group: {
+                    _id: { $dateToString: { format: '%Y-%m-%d', date: '$startTime', timezone: 'Asia/Kolkata' } },
+                },
+            },
+            { $sort: { _id: -1 } },
+        ]);
+
+        const istOffset = 5.5 * 60 * 60 * 1000;
+        let missedDateStr = null;
+
+        for (let i = 1; i < 100; i++) {
+            const checkDate = new Date(Date.now() + istOffset);
+            checkDate.setDate(checkDate.getDate() - i);
+            const dateStr = checkDate.toISOString().split('T')[0];
+
+            if (!allDays.some(d => d._id === dateStr)) {
+                missedDateStr = dateStr;
+                break;
+            }
+        }
+
+        if (!missedDateStr) {
+            return res.status(400).json({ message: 'No broken streak found to restore.' });
+        }
+
+        const restoreDate = new Date(`${missedDateStr}T12:00:00.000+05:30`);
+
+        const activity = new Activity({
+            userId: uid,
+            type: 'streak_restore',
+            topic: 'Ad Reward',
+            duration: 0,
+            totalElapsed: 0,
+            focusScore: 100,
+            flowStateAchieved: false,
+            startTime: restoreDate,
+            endTime: restoreDate,
+            pauseEvents: [],
+            totalPauseDuration: 0,
+            pauseCount: 0,
+            date: restoreDate,
+        });
+
+        const newActivity = await activity.save();
+
+        const user = await User.findById(uid);
+        if (user) {
+            user.totalSessions = (user.totalSessions || 0) + 1;
+            await user.save();
+        }
+
+        res.status(201).json({ 
+            success: true, 
+            message: `Streak restored for ${missedDateStr}`, 
+            activity: newActivity 
+        });
+
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 module.exports = router;
+
