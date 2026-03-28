@@ -9,6 +9,7 @@ router.get('/version', (req, res) => {
         minRequiredVersion: '1.0.3', // Users below this will be forced to update
         updateUrl: 'https://play.google.com/store/apps/details?id=com.winaymauryatrackme.app',
         forceUpdate: true,
+        adsEnabled: true, // Master Switch for Ads (Google Mobile Ads)
         message: 'A new version of TrackMe is available with better performance and new features! 🔥'
     });
 });
