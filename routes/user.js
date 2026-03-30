@@ -81,8 +81,11 @@ router.get('/', async (req, res) => {
             user.unlockedAvatars = ['avatar1', 'avatar2', 'avatar3', 'avatar10', 'avatar11', 'avatar12'];
             needsSave = true;
         }
-        if (user.avatarUnlocksToday === undefined) {
+        // Daily Reset Logic for Avatar Unlocks
+        const today = new Date().toISOString().split('T')[0];
+        if (user.lastAvatarUnlockDate !== today) {
             user.avatarUnlocksToday = 0;
+            user.lastAvatarUnlockDate = today;
             needsSave = true;
         }
 

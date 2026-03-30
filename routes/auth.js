@@ -446,9 +446,9 @@ router.post('/unlock-avatar', async (req, res) => {
         }
 
         // Check limit
-        if (user.avatarUnlocksToday >= 3) {
+        if (user.avatarUnlocksToday >= 2) {
             return res.status(400).json({ 
-                message: 'Daily limit reached! You can unlock 3 avatars per day. Come back tomorrow! 🎯' 
+                message: 'Daily limit reached! You can unlock 2 avatars per day. Come back tomorrow! 🎯' 
             });
         }
 
@@ -467,9 +467,8 @@ router.post('/unlock-avatar', async (req, res) => {
             return res.status(400).json({ message: 'Wow! You have unlocked all available mystery avatars! 🏆' });
         }
 
-        // Pick one randomly
-        const randomIndex = Math.floor(Math.random() * lockedAvatars.length);
-        const unlockedId = lockedAvatars[randomIndex];
+        // Pick the next locked avatar (serial wise)
+        const unlockedId = lockedAvatars[0];
 
         user.unlockedAvatars.push(unlockedId);
         user.avatarUnlocksToday += 1;
