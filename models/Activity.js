@@ -14,7 +14,7 @@ const ActivitySchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['Study', 'Task'],
+        enum: ['Study', 'Task', 'streak_restore'],
         required: true,
     },
     topic: {
